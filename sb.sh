@@ -21,48 +21,37 @@ log(){ echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" | tee -a "$log_file"; }
 [[ $EUID -ne 0 ]] && yellow "请以root模式运行脚本" && exit
 stty erase $'\b' 2>/dev/null || stty erase '^H' 2>/dev/null
 #[[ -e /etc/hosts ]] && grep -qE '^ *172.65.251.78 gitlab.com' /etc/hosts || echo -e '\n172.65.251.78 gitlab.com' >> /etc/hosts
+_detect_system(){
+[[ -f /etc/os-release ]] && source /etc/os-release
 if [[ -f /etc/redhat-release ]]; then
 release="Centos"
-elif cat /etc/issue | grep -q -E -i "alpine"; then
+elif [[ "$ID" =~ alpine ]]; then
 release="alpine"
-elif cat /etc/issue | grep -q -E -i "debian"; then
-release="Debian"
-elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-release="Ubuntu"
-elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+elif [[ "$ID" =~ ubuntu|debian ]]; then
+release="${ID^}"
+elif [[ "$PRETTY_NAME" =~ Centos|Red\ Hat|RedHat ]]; then
 release="Centos"
-elif cat /proc/version | grep -q -E -i "debian"; then
-release="Debian"
-elif cat /proc/version | grep -q -E -i "ubuntu"; then
-release="Ubuntu"
-elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-release="Centos"
-else 
+else
 red "脚本不支持当前的系统，请选择使用Ubuntu,Debian,Centos系统。" && exit
 fi
+vsid="${VERSION_ID%%.*}"
+op="$PRETTY_NAME"
+}
+_detect_system
 export sbfiles="/etc/s-box/sb10.json /etc/s-box/sb11.json /etc/s-box/sb.json"
 export sbnh=$(/etc/s-box/sing-box version 2>/dev/null | awk '/version/{print $NF}' 2>/dev/null | cut -d '.' -f 1,2)
-vsid=$(grep -i version_id /etc/os-release | cut -d \" -f2 | cut -d . -f1)
-op=$(cat /etc/redhat-release 2>/dev/null || cat /etc/os-release 2>/dev/null | grep -i pretty_name | cut -d \" -f2)
-#if [[ $(echo "$op" | grep -i -E "arch|alpine") ]]; then
-if [[ $(echo "$op" | grep -i -E "arch") ]]; then
-red "脚本不支持当前的 $op 系统，请选择使用Ubuntu,Debian,Centos系统。" && exit
-fi
+[[ "$op" =~ Arch ]] && red "脚本不支持当前的 $op 系统，请选择使用Ubuntu,Debian,Centos系统。" && exit
 version=$(uname -r | cut -d "-" -f1)
-[[ -z $(systemd-detect-virt 2>/dev/null) ]] && vi=$(virt-what 2>/dev/null) || vi=$(systemd-detect-virt 2>/dev/null)
+vi=$(systemd-detect-virt 2>/dev/null)
+[[ -z "$vi" ]] && vi=$(virt-what 2>/dev/null)
 case $(uname -m) in
 armv7l) cpu=armv7;;
 aarch64) cpu=arm64;;
 x86_64) cpu=amd64;;
 *) red "目前脚本不支持$(uname -m)架构" && exit;;
 esac
-if [[ -n $(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | awk -F ' ' '{print $3}') ]]; then
-bbr=`sysctl net.ipv4.tcp_congestion_control | awk -F ' ' '{print $3}'`
-elif [[ -n $(ping 10.0.0.2 -c 2 | grep ttl) ]]; then
-bbr="Openvz版bbr-plus"
-else
-bbr="Openvz/Lxc"
-fi
+bbr=$(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | awk '{print $NF}')
+[[ -z "$bbr" ]] && bbr="Openvz/Lxc"
 hostname=$(hostname)
 
 if [ ! -f sbyg_update ]; then
@@ -139,20 +128,41 @@ fi
 fi
 fi
 v4v6(){
+{
 v4=$(curl -s4m5 icanhazip.com -k)
+} &
+{
 v6=$(curl -s6m5 icanhazip.com -k)
-v4dq=$(curl -s4m5 -k https://myip.ipip.net | awk -F'来自于：' '{print $2}' 2>/dev/null)
-#v4dq=$(curl -s4m5 -k https://ip.fm | sed -n 's/.*Location: //p' 2>/dev/null)
-v6dq=$(curl -s6m5 -k https://ip.fm | sed -n 's/.*Location: //p' 2>/dev/null)
+} &
+{
+v4dq=$(curl -s4m5 -k https://myip.ipip.net 2>/dev/null | awk -F'来自于：' '{print $2}')
+} &
+{
+v6dq=$(curl -s6m5 -k https://ip.fm 2>/dev/null | sed -n 's/.*Location: //p')
+} &
+wait
 }
 warpcheck(){
-wgcfv6=$(curl -s6m5 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
-wgcfv4=$(curl -s4m5 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
+{
+wgcfv4=$(curl -s4m5 https://www.cloudflare.com/cdn-cgi/trace -k 2>/dev/null | grep warp | cut -d= -f2)
+} &
+{
+wgcfv6=$(curl -s6m5 https://www.cloudflare.com/cdn-cgi/trace -k 2>/dev/null | grep warp | cut -d= -f2)
+} &
+wait
 }
 
 v6(){
 v4orv6(){
-if [ -z "$(curl -s4m5 icanhazip.com -k)" ]; then
+_v4_check="" _v6_check=""
+{
+_v4_check=$(curl -s4m5 icanhazip.com -k 2>/dev/null)
+} &
+{
+_v6_check=$(curl -s6m5 icanhazip.com -k 2>/dev/null)
+} &
+wait
+if [ -z "$_v4_check" ]; then
 echo
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 yellow "检测到 纯IPV6 VPS，添加NAT64"
@@ -161,11 +171,7 @@ ipv=prefer_ipv6
 else
 ipv=prefer_ipv4
 fi
-if [ -n "$(curl -s6m5 icanhazip.com -k)" ]; then
-endip="2606:4700:d0::a29f:c001"
-else
-endip="162.159.192.1"
-fi
+[[ -n "$_v6_check" ]] && endip="2606:4700:d0::a29f:c001" || endip="162.159.192.1"
 }
 warpcheck
 if [[ ! $wgcfv4 =~ on|plus && ! $wgcfv6 =~ on|plus ]]; then
@@ -3900,6 +3906,206 @@ red "版本号检测出错，请重试" && upsbcroe
 fi
 }
 
+backup_init(){
+local backup_dir="/etc/s-box/backups"
+[[ ! -d "$backup_dir" ]] && mkdir -p "$backup_dir"
+local backup_log="/var/log/sing-box-vps/backup.log"
+[[ ! -f "$backup_log" ]] && touch "$backup_log"
+echo "$backup_dir"
+}
+
+backup_config(){
+local backup_dir=$(backup_init)
+local timestamp=$(date +'%Y-%m-%d_%H%M%S')
+local backup_id="bk_${timestamp}"
+local temp_dir=$(mktemp -d)
+local backup_file="$backup_dir/${backup_id}.tar.gz"
+local log_file="/var/log/sing-box-vps/backup.log"
+
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] 开始备份配置..." | tee -a "$log_file"
+
+mkdir -p "$temp_dir/config" "$temp_dir/certs" "$temp_dir/logs"
+
+cp /etc/s-box/*.json "$temp_dir/config/" 2>/dev/null || true
+cp /etc/s-box/cert.pem "$temp_dir/certs/" 2>/dev/null || true
+cp /etc/s-box/private.key "$temp_dir/certs/" 2>/dev/null || true
+cp /etc/s-box/certs/*.{crt,key,pem} "$temp_dir/certs/" 2>/dev/null || true
+
+if [[ -f /etc/s-box/ca.log ]]; then
+  echo "证书信息: $(cat /etc/s-box/ca.log)" > "$temp_dir/logs/ca.log"
+fi
+
+local sbversion=$(/etc/s-box/sing-box version 2>/dev/null | awk '/version/{print $NF}')
+local system_info="System: $(uname -r), CPU: $cpu, Release: $release"
+
+cat > "$temp_dir/metadata.json" << EOF
+{
+  "backup_id": "$backup_id",
+  "timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+  "sing_box_version": "${sbversion:-unknown}",
+  "system_info": "$system_info",
+  "hostname": "$(hostname)",
+  "size": "pending"
+}
+EOF
+
+cd "$temp_dir" && tar -czf "$backup_file" . && cd - >/dev/null
+local size=$(du -h "$backup_file" | awk '{print $1}')
+local checksum=$(sha256sum "$backup_file" | awk '{print $1}')
+
+sed -i "s/\"size\": \"pending\"/\"checksum\": \"$checksum\", \"size\": \"$size\"/" "$temp_dir/metadata.json" 2>/dev/null || true
+
+echo "$timestamp|$backup_id|$sbversion|$size|success|配置备份" >> "$backup_dir/index.log"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ 备份成功: $backup_file ($size)" | tee -a "$log_file"
+
+rm -rf "$temp_dir"
+}
+
+view_backups(){
+local backup_dir=$(backup_init)
+local log_file="/var/log/sing-box-vps/backup.log"
+
+if [[ ! -f "$backup_dir/index.log" || ! -s "$backup_dir/index.log" ]]; then
+  yellow "📦 暂无备份记录"
+  return
+fi
+
+echo
+blue "════════════════════════════════════════════════════════════════"
+blue "📋 配置备份列表"
+blue "════════════════════════════════════════════════════════════════"
+printf "%-20s | %-10s | %-8s | %s\n" "备份时间" "版本" "大小" "状态"
+blue "────────────────────────────────────────────────────────────────"
+
+awk -F'|' '{printf "%-20s | %-10s | %-8s | %s\n", $1, $3, $4, $5}' "$backup_dir/index.log"
+
+blue "════════════════════════════════════════════════════════════════"
+echo
+}
+
+restore_backup(){
+local backup_dir=$(backup_init)
+local log_file="/var/log/sing-box-vps/backup.log"
+
+if [[ ! -f "$backup_dir/index.log" || ! -s "$backup_dir/index.log" ]]; then
+  yellow "📦 暂无备份可恢复"
+  return
+fi
+
+view_backups
+
+echo
+readp "请输入要恢复的备份时间 (如: 2026-06-18_143025)，或输入q返回: " backup_time
+[[ "$backup_time" == "q" ]] && return
+
+local backup_file="$backup_dir/bk_${backup_time}.tar.gz"
+if [[ ! -f "$backup_file" ]]; then
+  red "❌ 备份文件不存在: $backup_file" && sleep 2 && return
+fi
+
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] 开始恢复备份..." | tee -a "$log_file"
+yellow "⚠️  即将恢复备份，当前配置将自动备份为: auto_backup_$(date +'%Y%m%d_%H%M%S')"
+readp "确认恢复? (y/n): " confirm
+[[ "$confirm" != "y" && "$confirm" != "Y" ]] && return
+
+local auto_backup_dir="$backup_dir/auto_backup_$(date +'%Y%m%d_%H%M%S')"
+mkdir -p "$auto_backup_dir"
+cp /etc/s-box/*.json "$auto_backup_dir/" 2>/dev/null || true
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ 当前配置已自动备份" | tee -a "$log_file"
+
+local temp_dir=$(mktemp -d)
+tar -xzf "$backup_file" -C "$temp_dir"
+
+if command -v apk >/dev/null 2>&1; then
+  rc-service sing-box stop >/dev/null 2>&1
+else
+  systemctl stop sing-box >/dev/null 2>&1
+fi
+
+cp "$temp_dir/config"/*.json /etc/s-box/ 2>/dev/null || true
+cp "$temp_dir/certs"/* /etc/s-box/certs/ 2>/dev/null || true
+
+if command -v apk >/dev/null 2>&1; then
+  rc-service sing-box start >/dev/null 2>&1
+  sleep 2
+  if rc-service sing-box status 2>/dev/null | grep -q started; then
+    green "✅ 恢复成功，Sing-box已启动"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ 备份恢复成功" | tee -a "$log_file"
+  else
+    red "❌ Sing-box启动失败，已回滚至自动备份"
+    rm /etc/s-box/*.json
+    cp "$auto_backup_dir"/*.json /etc/s-box/
+    rc-service sing-box start >/dev/null 2>&1
+  fi
+else
+  systemctl start sing-box >/dev/null 2>&1
+  sleep 2
+  if systemctl is-active sing-box >/dev/null 2>&1; then
+    green "✅ 恢复成功，Sing-box已启动"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ 备份恢复成功" | tee -a "$log_file"
+  else
+    red "❌ Sing-box启动失败，已回滚至自动备份"
+    rm /etc/s-box/*.json
+    cp "$auto_backup_dir"/*.json /etc/s-box/
+    systemctl start sing-box >/dev/null 2>&1
+  fi
+fi
+
+rm -rf "$temp_dir"
+}
+
+delete_backup(){
+local backup_dir=$(backup_init)
+
+if [[ ! -f "$backup_dir/index.log" || ! -s "$backup_dir/index.log" ]]; then
+  yellow "📦 暂无备份可删除"
+  return
+fi
+
+view_backups
+
+echo
+readp "请输入要删除的备份时间 (如: 2026-06-18_143025)，或输入q返回: " backup_time
+[[ "$backup_time" == "q" ]] && return
+
+local backup_file="$backup_dir/bk_${backup_time}.tar.gz"
+if [[ ! -f "$backup_file" ]]; then
+  red "❌ 备份文件不存在" && sleep 2 && return
+fi
+
+readp "确认删除备份? (y/n): " confirm
+[[ "$confirm" != "y" && "$confirm" != "Y" ]] && return
+
+rm -f "$backup_file"
+sed -i "/^${backup_time}|/d" "$backup_dir/index.log"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ 备份已删除: $backup_time" >> /var/log/sing-box-vps/backup.log
+
+green "✅ 备份删除成功"
+}
+
+backup_menu(){
+echo
+red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+green "📦 配置备份管理"
+red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+echo "1️⃣  备份当前配置"
+echo "2️⃣  查看备份历史"
+echo "3️⃣  恢复备份"
+echo "4️⃣  删除备份"
+echo "0️⃣  返回上层"
+echo
+readp "请选择【0-4】: " menu
+
+case "$menu" in
+  1) backup_config; sleep 2; backup_menu;;
+  2) view_backups; readp "按回车返回: " dummy; backup_menu;;
+  3) restore_backup; sleep 2; backup_menu;;
+  4) delete_backup; sleep 2; backup_menu;;
+  0) return;;
+  *) red "❌ 输入错误，请选择 0-4"; sleep 1; backup_menu;;
+esac
+}
+
 unins(){
 if command -v apk >/dev/null 2>&1; then
 for svc in sing-box argo; do
@@ -4442,16 +4648,37 @@ if [ -f '/etc/s-box/sb.json' ]; then
 showprotocol
 fi
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+yellow "📋 主菜单"
+red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+echo "1️⃣  安装 Sing-box"
+echo "2️⃣  卸载 Sing-box"
+echo "3️⃣  修改服务器地址"
+echo "4️⃣  修改协议端口"
+echo "5️⃣  修改流量分流"
+echo "6️⃣  客户端订阅分享"
+echo "7️⃣  升级Sing-box"
+echo "8️⃣  更新内核版本"
+echo "9️⃣  Clash订阅分享"
+echo "🔟 查看日志"
+echo "1️⃣1️⃣ BBR加速设置"
+echo "1️⃣2️⃣ ACME证书申请"
+echo "1️⃣3️⃣ Cloudflare Warp"
+echo "1️⃣4️⃣ 订阅保活"
+echo "1️⃣5️⃣ Warp Go"
+echo "1️⃣6️⃣ 系统优化"
+echo "1️⃣7️⃣ 📦 配置备份管理"
+echo "0️⃣  退出"
+red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo
-readp "请输入数字【0-16】:" Input
-case "$Input" in  
+readp "请输入数字【0-17】:" Input
+case "$Input" in
  1 ) instsllsingbox;;
  2 ) unins;;
  3 ) changeserv;;
  4 ) changeport;;
  5 ) changefl;;
  6 ) stclre;;
- 7 ) upsbyg;; 
+ 7 ) upsbyg;;
  8 ) upsbcroe;;
  9 ) clash_sb_share;;
 10 ) sblog;;
@@ -4461,5 +4688,7 @@ case "$Input" in
 14 ) inssbwpph;;
 15 ) wgcfgo && sbshare;;
 16 ) sbsm;;
- * ) exit 
+17 ) backup_menu;;
+ 0 ) exit;;
+ * ) exit
 esac
