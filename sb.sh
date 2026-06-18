@@ -128,40 +128,37 @@ fi
 fi
 fi
 v4v6(){
-{
-v4=$(curl -s4m5 icanhazip.com -k)
-} &
-{
-v6=$(curl -s6m5 icanhazip.com -k)
-} &
-{
-v4dq=$(curl -s4m5 -k https://myip.ipip.net 2>/dev/null | awk -F'来自于：' '{print $2}')
-} &
-{
-v6dq=$(curl -s6m5 -k https://ip.fm 2>/dev/null | sed -n 's/.*Location: //p')
-} &
+local _t=$(mktemp -d)
+curl -s4m5 icanhazip.com -k > "$_t/v4" 2>/dev/null &
+curl -s6m5 icanhazip.com -k > "$_t/v6" 2>/dev/null &
+curl -s4m5 -k https://myip.ipip.net > "$_t/v4dq_raw" 2>/dev/null &
+curl -s6m5 -k https://ip.fm > "$_t/v6dq_raw" 2>/dev/null &
 wait
+v4=$(cat "$_t/v4" 2>/dev/null | tr -d '[:space:]')
+v6=$(cat "$_t/v6" 2>/dev/null | tr -d '[:space:]')
+v4dq=$(cat "$_t/v4dq_raw" 2>/dev/null | awk -F'来自于：' '{print $2}')
+v6dq=$(cat "$_t/v6dq_raw" 2>/dev/null | sed -n 's/.*Location: //p')
+rm -rf "$_t"
 }
 warpcheck(){
-{
-wgcfv4=$(curl -s4m5 https://www.cloudflare.com/cdn-cgi/trace -k 2>/dev/null | grep warp | cut -d= -f2)
-} &
-{
-wgcfv6=$(curl -s6m5 https://www.cloudflare.com/cdn-cgi/trace -k 2>/dev/null | grep warp | cut -d= -f2)
-} &
+local _t=$(mktemp -d)
+curl -s4m5 https://www.cloudflare.com/cdn-cgi/trace -k > "$_t/wgcfv4" 2>/dev/null &
+curl -s6m5 https://www.cloudflare.com/cdn-cgi/trace -k > "$_t/wgcfv6" 2>/dev/null &
 wait
+wgcfv4=$(grep warp "$_t/wgcfv4" 2>/dev/null | cut -d= -f2)
+wgcfv6=$(grep warp "$_t/wgcfv6" 2>/dev/null | cut -d= -f2)
+rm -rf "$_t"
 }
 
 v6(){
 v4orv6(){
-_v4_check="" _v6_check=""
-{
-_v4_check=$(curl -s4m5 icanhazip.com -k 2>/dev/null)
-} &
-{
-_v6_check=$(curl -s6m5 icanhazip.com -k 2>/dev/null)
-} &
+local _t=$(mktemp -d)
+curl -s4m5 icanhazip.com -k > "$_t/v4" 2>/dev/null &
+curl -s6m5 icanhazip.com -k > "$_t/v6" 2>/dev/null &
 wait
+_v4_check=$(cat "$_t/v4" 2>/dev/null | tr -d '[:space:]')
+_v6_check=$(cat "$_t/v6" 2>/dev/null | tr -d '[:space:]')
+rm -rf "$_t"
 if [ -z "$_v4_check" ]; then
 echo
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
@@ -4518,19 +4515,8 @@ white "支持：Vless-reality-vision、Vmess-ws(tls)+Argo、Hy2、Tuic、Anytls"
 white "快捷方式：sb"
 red "============================== Sing-box-vps 管理菜单 =============================="
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-insV=$(cat /etc/s-box/v 2>/dev/null)
-latestV=$(curl -sL https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/version | awk -F "更新内容" '{print $1}' | head -n 1)
-if [ -f /etc/s-box/v ]; then
-if [ "$insV" = "$latestV" ]; then
-echo -e "当前 Sing-box-yg 脚本最新版：${bblue}${insV}${plain} (已安装)"
-else
-echo -e "当前 Sing-box-yg 脚本版本号：${bblue}${insV}${plain}"
-echo -e "检测到最新 Sing-box-yg 脚本版本号：${yellow}${latestV}${plain} (可选择7进行更新)"
-echo -e "${yellow}$(curl -sL https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/version)${plain}"
-fi
-else
-echo -e "Sing-box-vps 脚本（本地版本）"
-yellow "⚠️  Sing-box 未安装！请先选择选项 1 进行安装"
+if [ ! -f /etc/s-box/sb.json ]; then
+yellow "⚠️  Sing-box 未安装！请选择选项 1 进行安装"
 fi
 
 lapre
