@@ -12,6 +12,12 @@ yellow(){ echo -e "\033[33m\033[01m$1\033[0m";}
 blue(){ echo -e "\033[36m\033[01m$1\033[0m";}
 white(){ echo -e "\033[37m\033[01m$1\033[0m";}
 readp(){ read -p "$(yellow "$1")" $2;}
+
+log_dir="/var/log/sing-box-vps"
+log_file="$log_dir/install.log"
+[[ ! -d "$log_dir" ]] && mkdir -p "$log_dir"
+log(){ echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" | tee -a "$log_file"; }
+
 [[ $EUID -ne 0 ]] && yellow "请以root模式运行脚本" && exit
 stty erase $'\b' 2>/dev/null || stty erase '^H' 2>/dev/null
 #[[ -e /etc/hosts ]] && grep -qE '^ *172.65.251.78 gitlab.com' /etc/hosts || echo -e '\n172.65.251.78 gitlab.com' >> /etc/hosts
@@ -60,7 +66,8 @@ fi
 hostname=$(hostname)
 
 if [ ! -f sbyg_update ]; then
-green "首次安装Sing-box-yg脚本必要的依赖……"
+green "首次安装 Sing-box-vps 脚本必要的依赖……"
+log "开始安装依赖，系统：$release"
 if command -v apk >/dev/null 2>&1; then
 apk update
 apk add bash libc6-compat jq openssl procps busybox-extras iproute2 iputils coreutils expect git socat iptables grep tar tzdata util-linux
@@ -204,7 +211,7 @@ close
 elif [[ "$action" = "2" ]]; then
 echo
 else
-red "输入错误,请重新选择" && openyn
+red "❌ 输入错误，请选择 1 或 2" && openyn
 fi
 }
 
@@ -231,10 +238,10 @@ chmod +x /etc/s-box/sing-box
 blue "成功安装 Sing-box 内核版本：$(/etc/s-box/sing-box version | awk '/version/{print $NF}')"
 sbnh=$(/etc/s-box/sing-box version 2>/dev/null | awk '/version/{print $NF}' 2>/dev/null | cut -d '.' -f 1,2)
 else
-red "下载 Sing-box 内核不完整，安装失败，请再运行安装一次" && exit
+red "❌ Sing-box 内核文件不完整，安装失败。请检查网络连接后重新运行安装" && log "错误：Sing-box 内核下载不完整" && exit
 fi
 else
-red "下载 Sing-box 内核失败，请再运行安装一次，并检测VPS的网络是否可以访问Github" && exit
+red "❌ 下载 Sing-box 内核失败" && echo "请检查以下问题：" && echo "1. 确认 VPS 可以访问 GitHub（可用 ping 测试）" && echo "2. 检查网络连接速度" && echo "3. 重新运行安装脚本" && log "错误：Sing-box 内核下载失败，网络无法访问Github" && exit
 fi
 }
 
@@ -244,15 +251,15 @@ ym_vl_re=apple.com
 echo
 blue "Vless-reality的SNI域名默认为 apple.com"
 tlsyn=true
-ym_vm_ws=$(cat /root/ygkkkca/ca.log 2>/dev/null)
-certificatec_vmess_ws='/root/ygkkkca/cert.crt'
-certificatep_vmess_ws='/root/ygkkkca/private.key'
-certificatec_hy2='/root/ygkkkca/cert.crt'
-certificatep_hy2='/root/ygkkkca/private.key'
-certificatec_tuic='/root/ygkkkca/cert.crt'
-certificatep_tuic='/root/ygkkkca/private.key'
-certificatec_an='/root/ygkkkca/cert.crt'
-certificatep_an='/root/ygkkkca/private.key'
+ym_vm_ws=$(cat /etc/s-box/certs/ca.log 2>/dev/null)
+certificatec_vmess_ws='/etc/s-box/certs/cert.crt'
+certificatep_vmess_ws='/etc/s-box/certs/private.key'
+certificatec_hy2='/etc/s-box/certs/cert.crt'
+certificatep_hy2='/etc/s-box/certs/private.key'
+certificatec_tuic='/etc/s-box/certs/cert.crt'
+certificatep_tuic='/etc/s-box/certs/private.key'
+certificatec_an='/etc/s-box/certs/cert.crt'
+certificatep_an='/etc/s-box/certs/private.key'
 }
 
 zqzs(){
@@ -284,11 +291,11 @@ else
 red "生成bing自签证书失败" && exit
 fi
 echo
-if [[ -f /root/ygkkkca/cert.crt && -f /root/ygkkkca/private.key && -s /root/ygkkkca/cert.crt && -s /root/ygkkkca/private.key ]]; then
-yellow "经检测，之前已使用Acme-yg脚本申请过Acme域名证书：$(cat /root/ygkkkca/ca.log) "
-green "是否使用 $(cat /root/ygkkkca/ca.log) 域名证书？"
+if [[ -f /etc/s-box/certs/cert.crt && -f /etc/s-box/certs/private.key && -s /etc/s-box/certs/cert.crt && -s /etc/s-box/certs/private.key ]]; then
+yellow "经检测，之前已使用Acme-yg脚本申请过Acme域名证书：$(cat /etc/s-box/certs/ca.log) "
+green "是否使用 $(cat /etc/s-box/certs/ca.log) 域名证书？"
 yellow "1：否！使用自签的证书 (回车默认)"
-yellow "2：是！使用 $(cat /root/ygkkkca/ca.log) 域名证书"
+yellow "2：是！使用 $(cat /etc/s-box/certs/ca.log) 域名证书"
 readp "请选择【1-2】：" menu
 if [ -z "$menu" ] || [ "$menu" = "1" ] ; then
 zqzs
@@ -304,7 +311,7 @@ if [ -z "$menu" ] || [ "$menu" = "1" ] ; then
 zqzs
 else
 bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/acme-yg/main/acme.sh)
-if [[ ! -f /root/ygkkkca/cert.crt && ! -f /root/ygkkkca/private.key && ! -s /root/ygkkkca/cert.crt && ! -s /root/ygkkkca/private.key ]]; then
+if [[ ! -f /etc/s-box/certs/cert.crt && ! -f /etc/s-box/certs/private.key && ! -s /etc/s-box/certs/cert.crt && ! -s /etc/s-box/certs/private.key ]]; then
 red "Acme证书申请失败，继续使用自签证书" 
 zqzs
 else
@@ -973,9 +980,9 @@ fi
 }
 
 result_vl_vm_hy_tu(){
-if [[ -f /root/ygkkkca/cert.crt && -f /root/ygkkkca/private.key && -s /root/ygkkkca/cert.crt && -s /root/ygkkkca/private.key ]]; then
+if [[ -f /etc/s-box/certs/cert.crt && -f /etc/s-box/certs/private.key && -s /etc/s-box/certs/cert.crt && -s /etc/s-box/certs/private.key ]]; then
 ym=`bash ~/.acme.sh/acme.sh --list | tail -1 | awk '{print $1}'`
-echo $ym > /root/ygkkkca/ca.log
+echo $ym > /etc/s-box/certs/ca.log
 fi
 rm -rf /etc/s-box/vm_ws_argo.txt /etc/s-box/vm_ws.txt /etc/s-box/vm_ws_tls.txt
 server_ip=$(cat /etc/s-box/server_ip.log)
@@ -1033,7 +1040,7 @@ sbhy2pt=$(echo "$hy2_ports" | grep -o '[0-9]\+:[0-9]\+' | sed 's/.*/"&"/' | past
 else
 hyps=
 fi
-ym=$(cat /root/ygkkkca/ca.log 2>/dev/null)
+ym=$(cat /etc/s-box/certs/ca.log 2>/dev/null)
 hy2_sniname=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[2].tls.key_path')
 if [[ "$hy2_sniname" = '/etc/s-box/private.key' ]]; then
 SHA256=$(openssl x509 -in /etc/s-box/cert.pem -outform DER | sha256sum | awk '{print $1}')
@@ -1052,7 +1059,7 @@ ins_hy2=0
 hy2_ins=false
 fi
 tu5_port=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[3].listen_port')
-ym=$(cat /root/ygkkkca/ca.log 2>/dev/null)
+ym=$(cat /etc/s-box/certs/ca.log 2>/dev/null)
 tu5_sniname=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[3].tls.key_path')
 if [[ "$tu5_sniname" = '/etc/s-box/private.key' ]]; then
 tu5_name=www.bing.com
@@ -1068,7 +1075,7 @@ ins=0
 tu5_ins=false
 fi
 an_port=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[4].listen_port')
-ym=$(cat /root/ygkkkca/ca.log 2>/dev/null)
+ym=$(cat /etc/s-box/certs/ca.log 2>/dev/null)
 an_sniname=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[4].tls.key_path')
 if [[ "$an_sniname" = '/etc/s-box/private.key' ]]; then
 an_name=www.bing.com
@@ -2507,10 +2514,11 @@ fi
 }
 
 instsllsingbox(){
+log "用户开始安装 Sing-box（$cpu 架构）"
 if [[ -f '/etc/systemd/system/sing-box.service' ]]; then
-red "已安装Sing-box服务，无法再次安装" && exit
+red "❌ Sing-box 已安装，如需重装请先卸载" && log "安装失败：Sing-box 已存在" && exit
 fi
-mkdir -p /etc/s-box
+mkdir -p /etc/s-box /etc/s-box/certs
 v6
 openyn
 inssb
@@ -2546,20 +2554,20 @@ echo
 }
 
 changeym(){
-[ -f /root/ygkkkca/ca.log ] && ymzs="$yellow切换为域名证书：$(cat /root/ygkkkca/ca.log 2>/dev/null)$plain" || ymzs="$yellow未申请域名证书，无法切换$plain"
+[ -f /etc/s-box/certs/ca.log ] && ymzs="$yellow切换为域名证书：$(cat /etc/s-box/certs/ca.log 2>/dev/null)$plain" || ymzs="$yellow未申请域名证书，无法切换$plain"
 vl_na="正在使用的域名：$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[0].tls.server_name')。$yellow更换符合reality要求的域名，不支持证书域名$plain"
 tls=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.enabled')
-[[ "$tls" = "false" ]] && vm_na="当前已关闭TLS。$ymzs ${yellow}将开启TLS，Argo隧道将不支持开启${plain}" || vm_na="正在使用的域名证书：$(cat /root/ygkkkca/ca.log 2>/dev/null)。$yellow切换为关闭TLS，Argo隧道将可用$plain"
+[[ "$tls" = "false" ]] && vm_na="当前已关闭TLS。$ymzs ${yellow}将开启TLS，Argo隧道将不支持开启${plain}" || vm_na="正在使用的域名证书：$(cat /etc/s-box/certs/ca.log 2>/dev/null)。$yellow切换为关闭TLS，Argo隧道将可用$plain"
 hy2_sniname=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[2].tls.key_path')
-[[ "$hy2_sniname" = '/etc/s-box/private.key' ]] && hy2_na="正在使用自签bing证书。$ymzs" || hy2_na="正在使用的域名证书：$(cat /root/ygkkkca/ca.log 2>/dev/null)。$yellow切换为自签bing证书$plain"
+[[ "$hy2_sniname" = '/etc/s-box/private.key' ]] && hy2_na="正在使用自签bing证书。$ymzs" || hy2_na="正在使用的域名证书：$(cat /etc/s-box/certs/ca.log 2>/dev/null)。$yellow切换为自签bing证书$plain"
 tu5_sniname=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[3].tls.key_path')
-[[ "$tu5_sniname" = '/etc/s-box/private.key' ]] && tu5_na="正在使用自签bing证书。$ymzs" || tu5_na="正在使用的域名证书：$(cat /root/ygkkkca/ca.log 2>/dev/null)。$yellow切换为自签bing证书$plain"
+[[ "$tu5_sniname" = '/etc/s-box/private.key' ]] && tu5_na="正在使用自签bing证书。$ymzs" || tu5_na="正在使用的域名证书：$(cat /etc/s-box/certs/ca.log 2>/dev/null)。$yellow切换为自签bing证书$plain"
 an_sniname=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[4].tls.key_path')
-[[ "$an_sniname" = '/etc/s-box/private.key' ]] && an_na="正在使用自签bing证书。$ymzs" || an_na="正在使用的域名证书：$(cat /root/ygkkkca/ca.log 2>/dev/null)。$yellow切换为自签bing证书$plain"
+[[ "$an_sniname" = '/etc/s-box/private.key' ]] && an_na="正在使用自签bing证书。$ymzs" || an_na="正在使用的域名证书：$(cat /etc/s-box/certs/ca.log 2>/dev/null)。$yellow切换为自签bing证书$plain"
 echo
 green "请选择要切换证书模式的协议"
 green "1：vless-reality协议，$vl_na"
-if [[ -f /root/ygkkkca/ca.log ]]; then
+if [[ -f /etc/s-box/certs/ca.log ]]; then
 green "2：vmess-ws协议，$vm_na"
 green "3：Hysteria2协议，$hy2_na"
 green "4：Tuic5协议，$tu5_na"
@@ -2582,16 +2590,16 @@ echo $sbfiles | xargs -n1 sed -i "27s/$b/$ym_vl_re/"
 restartsb && sbshare > /dev/null 2>&1
 blue "Vless-reality域名证书更换完毕"
 elif [ "$menu" = "2" ]; then
-if [ -f /root/ygkkkca/ca.log ]; then
+if [ -f /etc/s-box/certs/ca.log ]; then
 a=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.enabled')
 [ "$a" = "true" ] && a_a=false || a_a=true
 b=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.server_name')
-[ "$b" = "www.bing.com" ] && b_b=$(cat /root/ygkkkca/ca.log) || b_b=$(cat /root/ygkkkca/ca.log)
+[ "$b" = "www.bing.com" ] && b_b=$(cat /etc/s-box/certs/ca.log) || b_b=$(cat /etc/s-box/certs/ca.log)
 c=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.certificate_path')
 d=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[1].tls.key_path')
 if [ "$d" = '/etc/s-box/private.key' ]; then
-c_c='/root/ygkkkca/cert.crt'
-d_d='/root/ygkkkca/private.key'
+c_c='/etc/s-box/certs/cert.crt'
+d_d='/etc/s-box/certs/private.key'
 else
 c_c='/etc/s-box/cert.pem'
 d_d='/etc/s-box/private.key'
@@ -2612,12 +2620,12 @@ else
 red "当前未申请域名证书，不可切换。主菜单选择12，执行Acme证书申请" && sleep 2 && sb
 fi
 elif [ "$menu" = "3" ]; then
-if [ -f /root/ygkkkca/ca.log ]; then
+if [ -f /etc/s-box/certs/ca.log ]; then
 c=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[2].tls.certificate_path')
 d=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[2].tls.key_path')
 if [ "$d" = '/etc/s-box/private.key' ]; then
-c_c='/root/ygkkkca/cert.crt'
-d_d='/root/ygkkkca/private.key'
+c_c='/etc/s-box/certs/cert.crt'
+d_d='/etc/s-box/certs/private.key'
 else
 c_c='/etc/s-box/cert.pem'
 d_d='/etc/s-box/private.key'
@@ -2630,12 +2638,12 @@ else
 red "当前未申请域名证书，不可切换。主菜单选择12，执行Acme证书申请" && sleep 2 && sb
 fi
 elif [ "$menu" = "4" ]; then
-if [ -f /root/ygkkkca/ca.log ]; then
+if [ -f /etc/s-box/certs/ca.log ]; then
 c=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[3].tls.certificate_path')
 d=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[3].tls.key_path')
 if [ "$d" = '/etc/s-box/private.key' ]; then
-c_c='/root/ygkkkca/cert.crt'
-d_d='/root/ygkkkca/private.key'
+c_c='/etc/s-box/certs/cert.crt'
+d_d='/etc/s-box/certs/private.key'
 else
 c_c='/etc/s-box/cert.pem'
 d_d='/etc/s-box/private.key'
@@ -2648,12 +2656,12 @@ else
 red "当前未申请域名证书，不可切换。主菜单选择12，执行Acme证书申请" && sleep 2 && sb
 fi
 elif [ "$menu" = "5" ]; then
-if [ -f /root/ygkkkca/ca.log ]; then
+if [ -f /etc/s-box/certs/ca.log ]; then
 c=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[4].tls.certificate_path')
 d=$(sed 's://.*::g' /etc/s-box/sb.json | jq -r '.inbounds[4].tls.key_path')
 if [ "$d" = '/etc/s-box/private.key' ]; then
-c_c='/root/ygkkkca/cert.crt'
-d_d='/root/ygkkkca/private.key'
+c_c='/etc/s-box/certs/cert.crt'
+d_d='/etc/s-box/certs/private.key'
 else
 c_c='/etc/s-box/cert.pem'
 d_d='/etc/s-box/private.key'
@@ -4300,34 +4308,31 @@ echo -e "${bblue}     ░██        ░${plain}██    ░██ ██    
 echo -e "${bblue}     ░██ ${plain}        ░██    ░░██        ░██ ░██       ░${red}██ ░██       ░██ ░██ ${plain}  "
 echo -e "${bblue}     ░█${plain}█          ░██ ██ ██         ░██  ░░${red}██     ░██  ░░██     ░██  ░░██ ${plain}  "
 white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" 
-white "甬哥Github项目  ：github.com/yonggekkk"
-white "甬哥Blogger博客 ：ygkkk.blogspot.com"
-white "甬哥YouTube频道 ：www.youtube.com/@ygkkk"
-white "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" 
-white "Vless-reality-vision、Vmess-ws(tls)+Argo、Hy2、Tuic、Anytls 五协议共存脚本"
-white "脚本快捷方式：sb"
-red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-green " 1. 一键安装 Sing-box" 
-green " 2. 删除卸载 Sing-box"
-white "----------------------------------------------------------------------------------"
-green " 3. 变更配置 【双证书TLS/UUID路径/Argo/IP优先/TG通知/Warp/订阅/CDN优选】" 
-green " 4. 更改主端口/添加多端口跳跃复用" 
-green " 5. 三通道域名分流"
-green " 6. 关闭/重启 Sing-box"   
-green " 7. 更新 Sing-box-yg 脚本"
-green " 8. 更新/切换/指定 Sing-box 内核版本"
-white "----------------------------------------------------------------------------------"
-green " 9. 刷新并查看节点 【Mihomo/SFA+SFI+SFW三合一配置/订阅链接/推送TG通知】"
-green "10. 查看 Sing-box 运行日志"
-green "11. 一键原版BBR+FQ加速"
-green "12. 管理 Acme 申请域名证书"
-green "13. 管理 Warp 查看Netflix/ChatGPT解锁情况"
-green "14. 添加 WARP-plus-Socks5 代理模式 【本地Warp/多地区Psiphon-VPN】"
-green "15. 更换IP刷新本地IP、调整IPV4/IPV6配置输出"
-white "----------------------------------------------------------------------------------"
-green "16. Sing-box-yg脚本使用说明书"
-white "----------------------------------------------------------------------------------"
-green " 0. 退出脚本"
+white "Sing-box-vps 多协议共存脚本"
+white "支持：Vless-reality-vision、Vmess-ws(tls)+Argo、Hy2、Tuic、Anytls"
+white "快捷方式：sb"
+red "============================= Sing-box-vps 管理菜单 ============================="
+green " 1️⃣  一键安装 Sing-box"
+green " 2️⃣  删除卸载 Sing-box"
+white "─────────────────────────────── 配置管理 ───────────────────────────────"
+green " 3️⃣  变更配置（双证书/UUID/Argo/IP优先级/TG通知/Warp/订阅/CDN优选）"
+green " 4️⃣  更改主端口/多端口跳跃复用"
+green " 5️⃣  三通道域名分流"
+green " 6️⃣  关闭/重启 Sing-box"
+green " 7️⃣  更新脚本"
+green " 8️⃣  更新/切换/指定 Sing-box 内核"
+white "─────────────────────────────── 节点与分享 ───────────────────────────────"
+green " 9️⃣  刷新查看节点（Mihomo/SFA+SFI+SFW配置/订阅链接/TG推送）"
+green "🔟  查看 Sing-box 运行日志"
+white "─────────────────────────────── 系统优化 ───────────────────────────────"
+green "1️⃣1️⃣  一键BBR+FQ加速"
+green "1️⃣2️⃣  管理 Acme 申请域名证书"
+green "1️⃣3️⃣  管理 Warp（查看Netflix/ChatGPT解锁）"
+green "1️⃣4️⃣  添加 WARP-plus-Socks5 代理模式"
+green "1️⃣5️⃣  更换IP/调整IPV4/IPV6配置"
+white "─────────────────────────────── 帮助与退出 ───────────────────────────────"
+green "1️⃣6️⃣  查看脚本说明"
+green " 0️⃣  退出脚本"
 red "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 insV=$(cat /etc/s-box/v 2>/dev/null)
 latestV=$(curl -sL https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/version | awk -F "更新内容" '{print $1}' | head -n 1)
@@ -4340,8 +4345,8 @@ echo -e "检测到最新 Sing-box-yg 脚本版本号：${yellow}${latestV}${plai
 echo -e "${yellow}$(curl -sL https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/version)${plain}"
 fi
 else
-echo -e "当前 Sing-box-yg 脚本版本号：${bblue}${latestV}${plain}"
-yellow "未安装 Sing-box-yg 脚本！请先选择 1 安装"
+echo -e "Sing-box-vps 脚本（本地版本）"
+yellow "⚠️  Sing-box 未安装！请先选择选项 1 进行安装"
 fi
 
 lapre
