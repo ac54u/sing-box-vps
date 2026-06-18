@@ -3830,17 +3830,16 @@ rm /tmp/crontab.tmp
 
 lnsb(){
 rm -rf /usr/bin/sb
-curl -L -o /usr/bin/sb -# --retry 2 --insecure https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/sb.sh
+curl -L -o /usr/bin/sb -# --retry 2 --insecure https://raw.githubusercontent.com/ac54u/sing-box-vps/main/sb.sh
 chmod +x /usr/bin/sb
 }
 
 upsbyg(){
 if [[ ! -f '/usr/bin/sb' ]]; then
-red "未正常安装Sing-box-yg" && exit
+red "未正常安装Sing-box-vps" && exit
 fi
 lnsb
-curl -sL https://raw.githubusercontent.com/yonggekkk/sing-box-yg/main/version | awk -F "更新内容" '{print $1}' | head -n 1 > /etc/s-box/v
-green "Sing-box-yg安装脚本升级成功" && sleep 5 && sb
+green "Sing-box-vps脚本升级成功" && sleep 2 && sb
 }
 
 lapre(){
